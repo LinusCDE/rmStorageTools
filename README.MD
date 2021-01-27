@@ -1,62 +1,12 @@
-# rmWebUiTools
+# rmStorageTools
 
-[![Mentioned in Awesome reMarkable](https://awesome.re/mentioned-badge.svg)](https://github.com/reHackable/awesome-reMarkable)
+**In early Progress**
 
-This is a collection of scripts that utilize the reMarkable USB webinterface to export files.
+Based on [rmWebUiTools](https://github.com/LinusCDE/rmWebUiTools).
 
+Docs and other information most likely will think this is using the usb webinterface.
 
-## DISCLAIMER
+All the scripts should currently work, but may output misleading messages.
 
-Using the export functionality, the script will prompt your device to **export every single file** onto your pc.
-This will - as of now - lead to freezes and other problems, as the software is not specifically suited for this usecase.
-
-I (and reMarkable AS too) **WON'T take any responsibility** for potential damage done to your device using this software.
-
-
-## Installation
-
-First ensure you have a recent version of [Python 3](https://www.python.org/downloads/) installed.
-
-To install all dependencies, execute this command in your terminal or command prompt:
-```
-$ pip install requests
-```
-
-Next you clone this repository (or download it as a zip file), and go into the folder using the `cd` command in your terminal or command prompt.
-
-
-## Usage
-
-The scripts (except `api.py`) are meant to be executed with python 3.
-
-This can be done by typing `python` followed by the name of the script file.
-On unix systems, you can also execute those scripts like any other shell script.
-
-Examples:
-```
-$ python export.py --only-notebooks --update NotebookBackup
-$ ./export.py --only-notebooks --update NotebookBackup
-$ ./export.py --help
-
-$ ./tree.py
-$ ./paths.py
-$ ./stats.py
-```
-
-
-## Possibilities
-
-Right now, you can export/mirror all your files into a specified folder, export only changed files or view general information using on of the various scripts available.
-
-You can also make your own scripts using the `api.py` and give you access to all metadata provided by the reMarkable USB webinterface. An example of such information can be found in the file `.exampleRootMetadata.json`.
-
-There is certainly a lot more possible than currently provided.
-If you want a certain feature, you can create an issue (= feature request) or contribute it yourself.
-
-
-## Common problem
-
-When exporting a large amount of files, it can happen that your reMarkable **enters sleep mode** during that process or **locks up and restarts** (happens on some huge pdf files).
-
-When this happens, you can just execute the same command again. It should continue where it failed with no data loss.
-
+The export is done with the amazing lib [rmrl](https://github.com/rschroll/rmrl/) from [rschroll](https://github.com/rschroll)!
+The lib is probably missing a few things (like template backgrounds), but is really cool, easy to use and FAST. (Exported 230 files in under a minute!).

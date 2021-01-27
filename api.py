@@ -1,13 +1,78 @@
 '''
-Utilities regarding the reMarkable usb webinterface.
+Utilities regarding the reMarkable files.
+This files has most code from https://github.com/LinusCDE/rmWebUiTools,
+but was changed to read the local .metadata files
+(tested with rmfakecloud, but xochitl should work as well)
+
+TODO: Also accept ssh instead of just a folder
+TODO: Consistent casing of names
+TODO: Cleanups and more/corrected docs
 '''
 
 from collections.abc import Iterable
 from datetime import datetime
 import requests
+import os
+import json
 
 
-RM_WEB_UI_URL = 'http://10.11.99.1'  # No trailing slash!
+class RmStorage:
+    def __init__(self, source):
+        self.source = source
+        self.rmfiles = dict()  # id (str): RmFile instance, ...
+        self.fetch()
+        pass
+
+    def fetch(self):
+        '''
+        source: Currently only a path to the folder containing the flat file structure
+        (Should support some kind of ssh info in the future.)
+        '''
+        self.rmfiles.clear()
+
+        for filename in os.listdir(self.source):
+            if not filename.endswith('.metadata'):
+                continue
+            metadata_path = os.path.join(self.source, filename)
+            metadata_json = json.load(open(metadata_path, 'r'))
+            rmfile = RmFile(metadata_json)
+            self.rmfiles[rmfile.id] = rmfile
+
+        for rmfile in self.rmfiles.values():
+            rmfile.update_hierarchical_data(self)
+
+    def find_by_id(self, file_id: str):
+        return self.rmfiles.get(file_id, None)
+
+    def files_in_root(self):
+        for rmfile in self.rmfiles.values():
+            if rmfile.isInRoot:
+                yield rmfile
+
+    def files_in_trash(self):
+        for rmfile in self.rmfiles.values():
+            if rmfile.isInTrash:
+                yield rmfile
+
+    def iterate_all(self):
+        folders_to_visit = []
+
+        # Find base files and folders
+        for rmfile in self.files_in_root():
+            if rmfile.isFolder:
+                folders_to_visit.append(rmfile)
+            else:
+                yield rmfile
+
+        # Process until there are no unvisited folders
+        while len(folders_to_visit) > 0:
+            rmfolder = folders_to_visit.pop()
+            yield rmfile
+            for rmfile in rmfolder.files:
+                if rmfile.isFolder:
+                    folders_to_visit.append(rmfile)
+                else:
+                    yield rmfile
 
 
 class RmFile:
@@ -15,31 +80,52 @@ class RmFile:
     Representation of a file or folder on the reMarkable device.
     '''
 
-    def __init__(self, metadata, parent=None):
+    def __init__(self, metadata):
         # Given parameters:
         self.metadata = metadata
-        self.parent = parent
+        self.parent = None  # Determined later
 
         # Hierachial data:
+        # otherwise "DocumentType"
         self.isFolder = (metadata['Type'] == 'CollectionType')
-        self.files = [] if self.isFolder else None
-
-        # Determine file type:
-        self.isNotebook = not self.isFolder and metadata['fileType'] == 'notebook'
-        self.isPdf = not self.isFolder and metadata['fileType'] == 'pdf'
-        self.isEpub = not self.isFolder and metadata['fileType'] == 'epub'
+        self.files = [] if self.isFolder else None  # Determined later if folder
 
         # Easy access of common metadata:
-        self.name = metadata['VissibleName'] if 'VissibleName' in metadata else metadata['VisibleName']  # Typo from reMarkable which will probably get fixed in next patch
+        # Typo still exists on cloud side?
+        self.name = metadata['VissibleName'] if 'VissibleName' in metadata else metadata['VisibleName']
+
+        # Parent is either:
+        # - The id of the folder
+        # - A empty string if in root
+        # - The string "trash" if trashed
+        self.isInRoot = metadata['Parent'] == ''
+        self.isInTrash = metadata['Parent'] == 'trash'
+        self.parentId = metadata['Parent'] if not self.isInRoot and not self.isInTrash else None
+
         self.id = metadata['ID']
         self.isBookmarked = metadata['Bookmarked']
-        self.pages = metadata['pageCount'] if not self.isFolder else None
-        self.modifiedTimestamp = datetime.strptime(metadata['ModifiedClient'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-
+        self.modifiedTimestamp = datetime.strptime(
+            metadata['ModifiedClient'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
 
         # Prevent faulty structures:
         if '/' in self.name:
             self.name = self.name.replace('/', '')
+
+    def update_hierarchical_data(self, storage: RmStorage):
+        # Find parent
+        if self.parentId is not None:
+            parent = None
+            for rmfile in storage.rmfiles.values():
+                if rmfile.id == self.parentId:
+                    self.parent = rmfile
+                    break
+
+        # Find children/files
+        if self.isFolder:
+            self.files.clear()
+            for rmfile in storage.rmfiles.values():
+                if rmfile.parentId == self.id:
+                    self.files.append(rmfile)
 
     def path(self, basePath=''):
         '''
@@ -57,7 +143,7 @@ class RmFile:
 
         return basePath + path
 
-    def parentFolderPath(self, basePath=''):
+    def parent_folder_path(self, basePath=''):
         '''
         Returns the current folder path that a file is in.
         A basePath may be provided and prepended.
@@ -71,109 +157,8 @@ class RmFile:
         else:
             basePath
 
-    def exportPdf(self, targetPath):
-        '''
-        Downloads this file as pdf to a given path.
-        I may take a while before the download is started,
-        due to the conversion happening on the reMarkable device.
-
-        Returns bool with True for successful and False for unsuccessful.
-        '''
-        response = requests.get(RM_WEB_UI_URL + '/download/' + self.id + '/placeholder', stream=True)
-
-        if not response.ok:
-            return False
-
-        # Credit: https://stackoverflow.com/a/13137873
-        response.raw.decode_content = True  # Decompress if needed
-
-        with open(targetPath, 'wb') as targetFile:
-            for chunk in response.iter_content(8192):
-                targetFile.write(chunk)
-        return True
-
     def __str__(self):
         return 'RmFile{name=%s}' % self.name
 
     def __repr__(self):
         return self.__str__()
-
-
-def iterateAll(filesOrRmFile):
-    '''
-    Yields all files in this iterable (list, tuple, ...) or file including subfiles and folders.
-
-    In case any (nested) value that isn't a iterable or of class api.RmFile a ValueError will be raised!
-    '''
-    if isinstance(filesOrRmFile, RmFile):
-        # Yield file and optional sub files recursivly:
-        yield filesOrRmFile
-        if filesOrRmFile.isFolder:
-            for recursiveSubFile in iterateAll(filesOrRmFile.files):
-                yield recursiveSubFile
-    elif isinstance(filesOrRmFile, Iterable):
-        # Assumes elements to be of class api.RmFile
-        for rmFile in filesOrRmFile:
-            for subFile in iterateAll(rmFile):
-                yield subFile
-    else:
-        # Unknown type found!
-        raise ValueError('"api.iterateAll(filesOrRmFile)" only accepts (nested) iterables and instances of class api.RmFile !')
-
-
-def fetchFileStructure(parentRmFile=None):
-    '''
-    Fetches the fileStructure from the reMarkable USB webinterface.
-
-    Specify a RmFile of type folder to fetch only all folders after the given one.
-    Ignore to get all possible file and folders.
-
-    Returns either list of files OR FILLS given parentRmFiles files
-
-    May throw RuntimeError or other releated ones from "requests"
-    if there are problems fetching the data from the usb webinterface.
-    '''
-    if parentRmFile and not parentRmFile.isFolder:
-        raise ValueError('"api.fetchFileStructure(parentRmFile)": parentRmFile must be None or of type folder!')
-
-    # Use own list if not parentRmFile is given (aka beeing in root)
-    if not parentRmFile:
-        rootFiles = []
-
-    # Get metadata:
-    directoryMetadataUrl = RM_WEB_UI_URL + '/documents/' + (parentRmFile.id if parentRmFile else '')
-    response = requests.get(directoryMetadataUrl)
-    response.encoding = 'UTF-8'  # Ensure, all Non-ASCII characters get decoded properly
-
-    if not response.ok:
-        raise RuntimeError('Url %s responsed with status code %d' % (directoryMetadataUrl, response.status_code))
-
-    directoryMetadata = response.json()
-
-    # Parse Entries in jsonArray (= files in directory) and request subFolders:
-    for fileMetadata in directoryMetadata:
-        rmFile = RmFile(fileMetadata, parentRmFile)
-        if parentRmFile:
-            parentRmFile.files.append(rmFile)
-        else:
-            rootFiles.append(rmFile)
-
-        # Fetch subdirectories recursivly:
-        if rmFile.isFolder:
-            fetchFileStructure(rmFile)
-
-    # Return files as list if in root (otherwise the given parentRmFile got their files):
-    if not parentRmFile:
-        return rootFiles
-
-
-def findId(filesOrRmFile, fileId):
-    '''
-    Searched for any file or directory with fileId in given filesOrRmFile (including nested files)
-
-    Returns matching RmFile if found. Otherwise None .
-    '''
-    for rmFile in iterateAll(filesOrRmFile):
-        if rmFile.id == fileId:
-            return rmFile
-    return None

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import api
-from sys import stderr
+from sys import stderr, argv
 
 # ------------------------------
 # Config:
@@ -25,11 +25,16 @@ def printTree(rmFiles, prefix=(' '*4)):
 
 if __name__ == '__main__':
     try:
+        if len(argv) == 1:
+            print(f'Usage: {argv[0]} <folder>', file=stderr)
+            exit(1)
+
         print('Fetching file structure...\n', file=stderr)  # Prints to stderr to ignore this if piped into a text file
-        files = api.fetchFileStructure()
+        storage = api.RmStorage(argv[1])
+        root_files = list(storage.files_in_root())
 
         print('Remarkable file tree:')
-        printTree(files)
+        printTree(root_files)
     except Exception as ex:
         # Error handling:
         if DEBUG:

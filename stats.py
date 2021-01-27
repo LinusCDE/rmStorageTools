@@ -3,7 +3,7 @@
 import api
 from collections.abc import Iterable
 from statistics import mean, median
-from sys import stderr
+from sys import stderr, argv
 
 # ------------------------------
 # Config:
@@ -11,36 +11,17 @@ DEBUG = False
 # ------------------------------
 
 
-def printStats(files):
+def printStats(storage):
     '''
     Collect some interesting stats to show off in console.
     '''
     # Data to collect:
     filesPerFolder = []
-    pagesPerNotebook = []
-    pagesPerPdf = []
-    pagesPerEpub = []
-
 
     # Collect data:
-    for rmFile in api.iterateAll(files):
+    for rmFile in storage.iterate_all():
         if rmFile.isFolder:
             filesPerFolder.append(len(rmFile.files))
-        else:
-            pages = rmFile.pages
-            if rmFile.isNotebook:
-                pagesPerNotebook.append(pages)
-            elif rmFile.isPdf:
-                pagesPerPdf.append(pages)
-            elif rmFile.isEpub:
-                pagesPerEpub.append(pages)
-            else:
-                a = dict()
-                raise RuntimeError('Unexpeted filetype for "%s": %s' % (rmFile.path(), rmFile.metadata.get('fileType', '<No fileType-Metadata!>')))
-
-    # Collect root folder / current list as folder if given:
-    if isinstance(files, Iterable):
-        filesPerFolder.append(len(files))
 
 
     # Print collected data:
@@ -61,44 +42,17 @@ def printStats(files):
         '%d files' % sum(filesPerFolder)  # "TOTAL"
     ))
 
-    # Documents/Files:
-    print()
-    print('Pages in documents:')
-    docFormat = '  ' + 6*'{:<14}'
-    print(docFormat.format(
-        'TYPE',
-        'FILES',
-        'MEAN (AVG)',
-        'MEDIAN',
-        'BIGGEST',
-        'TOTAL'
-    ))
-    for typeName, pagesPerType in {'notebook': pagesPerNotebook, 'pdf': pagesPerPdf, 'epub': pagesPerEpub}.items():
-        if len(pagesPerType) == 0:
-            continue
-
-        print(docFormat.format(
-            typeName,  # "TYPE"
-            '%d files' % len(pagesPerType),  # "FILES"
-            '%.1f pages' % mean(pagesPerType),  # "MEAN (AVG)"
-            '%.0f pages' % median(pagesPerType),  # "MEDIAN"
-            '%s pages' % max(pagesPerType),  # "BIGGEST"
-            '%s pages' % sum(pagesPerType)  # "TOTAL"
-        ))
-
-    if len(pagesPerEpub) > 0:
-        print('\nThe page statistics of epub may not be correct as the device sometimes has trouble calculating them.')
-
-
-
-
 
 if __name__ == '__main__':
     try:
-        print('Fetching file structure...')
-        files = api.fetchFileStructure()
+        if len(argv) == 1:
+            print(f'Usage: {argv[0]} <folder>', file=stderr)
+            exit(1)
+
+        print('Fetching file structure...\n')  # Prints to stderr to ignore this if piped into a text file
+        storage = api.RmStorage(argv[1])
         print()
-        printStats(files)
+        printStats(storage)
     except Exception as ex:
         # Error handling:
         if DEBUG:

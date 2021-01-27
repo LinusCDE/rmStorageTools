@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import api
-from sys import stderr
+from sys import stderr, argv
 
 # ------------------------------
 # Config:
@@ -10,12 +10,18 @@ DEBUG = False
 
 if __name__ == '__main__':
     try:
-        print('Fetching file structure...\n', file=stderr)  # Prints to stderr to ignore this if piped into a text file
-        files = api.fetchFileStructure()
+        if len(argv) == 1:
+            print(f'Usage: {argv[0]} <folder>', file=stderr)
+            exit(1)
+
+        print('Fetching file structure...\n')  # Prints to stderr to ignore this if piped into a text file
+        storage = api.RmStorage(argv[1])
 
         print('IDs:')
-        for rmFile in api.iterateAll(files):
-            print('%s: %s' % (rmFile.id, rmFile.path()))
+        for file_id, rmFile in storage.rmfiles.items():
+            if rmFile.isInTrash:
+                continue
+            print('%s: %s' % (file_id, rmFile.path()))
     except Exception as ex:
         # Error handling:
         if DEBUG:
