@@ -11,7 +11,6 @@ TODO: Cleanups and more/corrected docs
 
 from collections.abc import Iterable
 from datetime import datetime
-import requests
 import os
 import json
 
