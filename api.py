@@ -86,7 +86,7 @@ class RmFile:
 
         # Hierachial data:
         # otherwise "DocumentType"
-        self.isFolder = (metadata['Type'] == 'CollectionType')
+        self.isFolder = 'Type' in metadata and metadata['Type'] == 'CollectionType'
         self.files = [] if self.isFolder else None  # Determined later if folder
 
         # Easy access of common metadata:
